@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>클래식 놀이터 체크인</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', sans-serif;
+    margin: 0;
+    background: #FBF5E9;
+    color: #3a2e1f;
+    text-align: center;
+    padding: 16px;
+  }
+  h2 { color: #1f6f5c; margin: 8px 0 16px; }
+  #reader {
+    width: 100%;
+    max-width: 360px;
+    margin: 0 auto;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 3px solid #C9A24B;
+  }
+  .stats {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    margin: 16px 0;
+  }
+  .stat-box {
+    background: #fff;
+    border: 2px solid #C9A24B;
+    border-radius: 12px;
+    padding: 12px 20px;
+    min-width: 100px;
+  }
+  .stat-box .num { font-size: 28px; font-weight: bold; color: #1f6f5c; }
+  .stat-box .label { font-size: 13px; color: #8a6d00; margin-top: 4px; }
+  .result {
+    margin-top: 16px;
+    padding: 16px;
+    border-radius: 12px;
+    font-size: 20px;
+    font-weight: bold;
+    min-height: 28px;
+    transition: all 0.2s;
+  }
+  .idle { background: #f0ece0; color: #8a7a5a; }
+  .checking { background: #eef1f5; color: #4a5a6a; }
+  .success { background: #e3f6e8; color: #1f6f5c; border: 2px solid #1f6f5c; }
+  .already { background: #fff3cd; color: #8a6d00; border: 2px solid #C9A24B; }
+  .notfound { background: #fde2e2; color: #a02828; border: 2px solid #a02828; }
+  .manual {
+    margin-top: 16px;
+    display: flex;
+    gap: 8px;
+    max-width: 360px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .manual input {
+    flex: 1;
+    padding: 10px;
+    border-radius: 8px;
+    border: 2px solid #C9A24B;
+    font-size: 16px;
+  }
+  .manual button {
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: none;
+    background: #1f6f5c;
+    color: #fff;
+    font-weight: bold;
+  }
+</style>
+</head>
+<body>
+  <h2>🎻 클래식 놀이터 체크인</h2>
+
+  <div class="stats">
+    <div class="stat-box">
+      <div class="num" id="checkedIn">-</div>
+      <div class="label">입장 인원</div>
+    </div>
+    <div class="stat-box">
+      <div class="num" id="totalReserved">-</div>
+      <div class="label">전체 예매 인원</div>
+    </div>
+  </div>
+
+  <div id="reader"></div>
+  <div id="result" class="result idle">QR코드를 카메라에 비춰주세요</div>
+
+  <div class="manual">
+    <input type="text" id="manualCode" placeholder="예매코드 직접입력 (예: YJ-001)">
+    <button onclick="manualCheck()">확인</button>
+  </div>
+
+  <script>
+    // ▼▼▼ 여기에 본인의 Apps Script 웹앱 URL을 붙여넣으세요 (배포 후 받은 .../exec 로 끝나는 주소) ▼▼▼
+    const APPS_SCRIPT_URL = 'PASTE_YOUR_WEB_APP_URL_HERE';
+    // ▲▲▲ 위 한 줄만 수정하면 됩니다 ▲▲▲
+
+    function showResult(res) {
+      const el = document.getElementById('result');
+      if (res.status === 'success') {
+        el.className = 'result success';
+        el.innerText = '✅ ' + res.name + '님 / ' + res.count + '명 입장 완료';
+      } else if (res.status === 'already') {
+        el.className = 'result already';
+        el.innerText = '⚠️ ' + res.name + '님 (' + res.count + '명) 이미 입장 처리됨';
+      } else if (res.status === 'notfound') {
+        el.className = 'result notfound';
+        el.innerText = '❌ 등록되지 않은 예매코드입니다';
+      } else {
+        el.className = 'result notfound';
+        el.innerText = '오류: ' + (res.message || '알 수 없는 오류');
+      }
+      refreshStats();
+    }
+
+    function showError() {
+      const el = document.getElementById('result');
+      el.className = 'result notfound';
+      el.innerText = '서버와 통신할 수 없습니다. URL 설정을 확인해주세요.';
+    }
+
+    async function checkIn(code) {
+      document.getElementById('result').className = 'result checking';
+      document.getElementById('result').innerText = '확인 중...';
+      try {
+        const res = await fetch(APPS_SCRIPT_URL + '?action=checkin&code=' + encodeURIComponent(code));
+        const data = await res.json();
+        showResult(data);
+      } catch (err) {
+        showError();
+      }
+    }
+
+    async function refreshStats() {
+      try {
+        const res = await fetch(APPS_SCRIPT_URL + '?action=stats');
+        const data = await res.json();
+        document.getElementById('checkedIn').innerText = data.totalCheckedIn;
+        document.getElementById('totalReserved').innerText = data.totalReserved;
+      } catch (err) {
+        // 통계 갱신 실패는 조용히 무시 (스캔 자체는 계속 가능)
+      }
+    }
+
+    function manualCheck() {
+      const code = document.getElementById('manualCode').value.trim();
+      if (!code) return;
+      checkIn(code);
+      document.getElementById('manualCode').value = '';
+    }
+
+    let lastCode = '';
+    let lastTime = 0;
+
+    function onScanSuccess(decodedText) {
+      const now = Date.now();
+      if (decodedText === lastCode && now - lastTime < 3000) return;
+      lastCode = decodedText;
+      lastTime = now;
+      checkIn(decodedText);
+    }
+
+    const html5QrCode = new Html5Qrcode("reader");
+    html5QrCode.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: 250 },
+      onScanSuccess
+    ).catch(function() {
+      document.getElementById('result').className = 'result notfound';
+      document.getElementById('result').innerText = '카메라를 시작할 수 없습니다. 아래 수동입력을 이용해주세요.';
+    });
+
+    refreshStats();
+    setInterval(refreshStats, 5000);
+  </script>
+</body>
+</html>
